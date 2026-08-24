@@ -8,7 +8,8 @@
 # Environment variables:
 #   ZABBIX_API_URL         default http://localhost:8080/api_jsonrpc.php
 #   ZABBIX_API_USER        default Admin
-#   ZABBIX_API_PASSWORD    default zabbix
+#   ZABBIX_API_PASSWORD    default zabbix, used only when no API token is set
+#   ZABBIX_API_TOKEN       optional API token; preferred over password
 #   ZBX_HOSTNAME           default DevKit-Stack
 #   ZBX_AGENT_DNS          default zabbix-agent2
 #   ZBX_AGENT_PORT         default 10150
@@ -21,6 +22,7 @@ set -euo pipefail
 API_URL="${ZABBIX_API_URL:-http://localhost:8080/api_jsonrpc.php}"
 API_USER="${ZABBIX_API_USER:-Admin}"
 API_PASSWORD="${ZABBIX_API_PASSWORD:-zabbix}"
+API_TOKEN="${ZABBIX_API_TOKEN:-}"
 HOST="${ZBX_HOSTNAME:-DevKit-Stack}"
 AGENT_DNS="${ZBX_AGENT_DNS:-zabbix-agent2}"
 AGENT_PORT="${ZBX_AGENT_PORT:-10150}"
@@ -38,24 +40,29 @@ api_call() {
     curl -sS "${headers[@]}" -d "$1" "$API_URL"
 }
 
-echo "Waiting for Zabbix API at $API_URL ..."
-AUTH=""
-RESPONSE=""
-for _ in $(seq 1 60); do
-    RESPONSE=$(api_call "{\"jsonrpc\":\"2.0\",\"method\":\"user.login\",\"params\":{\"username\":\"${API_USER}\",\"password\":\"${API_PASSWORD}\"},\"id\":1}")
-    AUTH=$(printf '%s' "$RESPONSE" | sed -nE 's/.*"result":"([^"]+)".*/\1/p')
-    if [ -n "$AUTH" ]; then
-        break
-    fi
-    sleep 5
-done
+if [ -n "$API_TOKEN" ]; then
+    AUTH="$API_TOKEN"
+    echo "Using Zabbix API token."
+else
+    echo "Waiting for Zabbix API at $API_URL ..."
+    AUTH=""
+    RESPONSE=""
+    for _ in $(seq 1 60); do
+        RESPONSE=$(api_call "{\"jsonrpc\":\"2.0\",\"method\":\"user.login\",\"params\":{\"username\":\"${API_USER}\",\"password\":\"${API_PASSWORD}\"},\"id\":1}")
+        AUTH=$(printf '%s' "$RESPONSE" | sed -nE 's/.*"result":"([^"]+)".*/\1/p')
+        if [ -n "$AUTH" ]; then
+            break
+        fi
+        sleep 5
+    done
 
-if [ -z "$AUTH" ]; then
-    echo "ERROR: could not authenticate against Zabbix API." >&2
-    echo "Last response: $RESPONSE" >&2
-    exit 1
+    if [ -z "$AUTH" ]; then
+        echo "ERROR: could not authenticate against Zabbix API." >&2
+        echo "Last response: $RESPONSE" >&2
+        exit 1
+    fi
+    echo "Authenticated with username and password."
 fi
-echo "Authenticated."
 
 # Host group -------------------------------------------------------------
 
@@ -112,22 +119,34 @@ fi
 BODY="{\"jsonrpc\":\"2.0\",\"method\":\"host.create\",\"params\":{"
 BODY+="\"host\":\"${HOST}\",\"name\":\"${HOST}\","
 BODY+="\"groups\":[{\"groupid\":\"${GROUPID}\"}],"
-BODY+="\"interfaces\":[{\"type\":1,\"main\":1,\"useip\":0,\"dns\":\"${AGENT_DNS}\",\"port\":\"${AGENT_PORT}\"}],"
-BODY+="\"templates\":[{\"templateid\":\"${LINUX_TID}\"},{\"templateid\":\"${DOCKER_TID}\"},{\"templateid\":\"${PG_TID}\"}],"
-BODY+="\"macros\":["
-BODY+="{\"macro\":\"{\$PG.CONNSTRING}\",\"value\":\"tcp://postgres:5432\"},"
-BODY+="{\"macro\":\"{\$PG.USER}\",\"value\":\"${MONITOR_USER}\"},"
-BODY+="{\"macro\":\"{\$PG.PASSWORD}\",\"value\":\"${MONITOR_PASSWORD}\"},"
-BODY+="{\"macro\":\"{\$PG.DATABASE}\",\"value\":\"${MONITOR_DATABASE}\"}"
-BODY+="]},"
+BODY+="\"interfaces\":[{\"type\":1,\"main\":1,\"useip\":0,\"dns\":\"${AGENT_DNS}\",\"port\":\"${AGENT_PORT}\"}]"
+BODY+="},"
 BODY+="\"id\":6}"
 
 RESULT=$(api_call "$BODY")
 
-if printf '%s' "$RESULT" | grep -q '"hostids"'; then
+if ! printf '%s' "$RESULT" | grep -q '"hostids"'; then
+    echo "ERROR: host.create failed."
+    echo "Response: $RESULT" >&2
+    exit 1
+fi
+
+HOSTID=$(printf '%s' "$RESULT" | sed -nE 's/.*"hostids":\["([0-9]+)"\].*/\1/p')
+UPDATE_BODY="{\"jsonrpc\":\"2.0\",\"method\":\"host.update\",\"params\":{"
+UPDATE_BODY+="\"hostid\":\"${HOSTID}\","
+UPDATE_BODY+="\"templates\":[{\"templateid\":\"${LINUX_TID}\"},{\"templateid\":\"${DOCKER_TID}\"},{\"templateid\":\"${PG_TID}\"}],"
+UPDATE_BODY+="\"macros\":["
+UPDATE_BODY+="{\"macro\":\"{\$PG.CONNSTRING}\",\"value\":\"tcp://postgres:5432\"},"
+UPDATE_BODY+="{\"macro\":\"{\$PG.USER}\",\"value\":\"${MONITOR_USER}\"},"
+UPDATE_BODY+="{\"macro\":\"{\$PG.PASSWORD}\",\"value\":\"${MONITOR_PASSWORD}\"},"
+UPDATE_BODY+="{\"macro\":\"{\$PG.DATABASE}\",\"value\":\"${MONITOR_DATABASE}\"}]},"
+UPDATE_BODY+="\"id\":8}"
+
+UPDATE_RESULT=$(api_call "$UPDATE_BODY")
+if printf '%s' "$UPDATE_RESULT" | grep -q '"hostids"'; then
     echo "Host $HOST registered with group DevKit and monitoring templates."
 else
-    echo "ERROR: host.create failed." >&2
-    echo "Response: $RESULT" >&2
+    echo "ERROR: host.update failed after creating host $HOST (id $HOSTID)."
+    echo "Response: $UPDATE_RESULT" >&2
     exit 1
 fi

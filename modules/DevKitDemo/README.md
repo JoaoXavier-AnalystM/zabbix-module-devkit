@@ -21,3 +21,6 @@ php -l modules/DevKitDemo/views/devkitdemo.view.php
 
 The runtime smoke test requires the Docker Compose stack described in
 `docker/compose.yml`. The target frontend is `http://localhost:8080`.
+
+For bootstrap automation, prefer a revocable Zabbix API token over a user
+password. Supply it only at runtime through `ZABBIX_API_TOKEN`.
