@@ -11,6 +11,7 @@
 #   ZABBIX_API_PASSWORD    default zabbix
 #   ZBX_HOSTNAME           default DevKit-Stack
 #   ZBX_AGENT_DNS          default zabbix-agent2
+#   ZBX_AGENT_PORT         default 10150
 #   ZBX_MONITOR_USER       default zbx_monitor
 #   ZBX_MONITOR_PASSWORD   default zbx_monitor_dev_password
 #   ZBX_MONITOR_DATABASE   default zabbix
@@ -22,6 +23,7 @@ API_USER="${ZABBIX_API_USER:-Admin}"
 API_PASSWORD="${ZABBIX_API_PASSWORD:-zabbix}"
 HOST="${ZBX_HOSTNAME:-DevKit-Stack}"
 AGENT_DNS="${ZBX_AGENT_DNS:-zabbix-agent2}"
+AGENT_PORT="${ZBX_AGENT_PORT:-10150}"
 MONITOR_USER="${ZBX_MONITOR_USER:-zbx_monitor}"
 MONITOR_PASSWORD="${ZBX_MONITOR_PASSWORD:-zbx_monitor_dev_password}"
 MONITOR_DATABASE="${ZBX_MONITOR_DATABASE:-zabbix}"
@@ -87,16 +89,24 @@ fi
 
 # Host ---------------------------------------------------------------------
 
-EXISTS=$(api_call "{\"jsonrpc\":\"2.0\",\"method\":\"host.get\",\"params\":{\"output\":[\"hostid\"],\"filter\":{\"host\":[\"${HOST}\"]}},\"auth\":\"${AUTH}\",\"id\":5}")
+EXISTS=$(api_call "{\"jsonrpc\":\"2.0\",\"method\":\"host.get\",\"params\":{\"output\":[\"hostid\"],\"selectInterfaces\":[\"interfaceid\"],\"filter\":{\"host\":[\"${HOST}\"]}},\"auth\":\"${AUTH}\",\"id\":5}")
 if printf '%s' "$EXISTS" | grep -q '"hostid"'; then
-    echo "Host $HOST already registered. Nothing to do."
+    HOSTID=$(printf '%s' "$EXISTS" | sed -nE 's/.*"hostid":"([0-9]+)".*/\1/p')
+    INTERFACEID=$(printf '%s' "$EXISTS" | sed -nE 's/.*"interfaceid":"([0-9]+)".*/\1/p')
+    UPDATE=$(api_call "{\"jsonrpc\":\"2.0\",\"method\":\"hostinterface.update\",\"params\":{\"interfaceid\":\"${INTERFACEID}\",\"port\":\"${AGENT_PORT}\"},\"auth\":\"${AUTH}\",\"id\":7}")
+    if ! printf '%s' "$UPDATE" | grep -q '"interfaceid"'; then
+        echo "ERROR: could not update agent port for host $HOST (hostid $HOSTID)." >&2
+        echo "Response: $UPDATE" >&2
+        exit 1
+    fi
+    echo "Host $HOST already registered; agent interface updated to port $AGENT_PORT."
     exit 0
 fi
 
 BODY="{\"jsonrpc\":\"2.0\",\"method\":\"host.create\",\"params\":{"
 BODY+="\"host\":\"${HOST}\",\"name\":\"${HOST}\","
 BODY+="\"groups\":[{\"groupid\":\"${GROUPID}\"}],"
-BODY+="\"interfaces\":[{\"type\":1,\"main\":1,\"useip\":0,\"dns\":\"${AGENT_DNS}\",\"port\":\"10050\"}],"
+BODY+="\"interfaces\":[{\"type\":1,\"main\":1,\"useip\":0,\"dns\":\"${AGENT_DNS}\",\"port\":\"${AGENT_PORT}\"}],"
 BODY+="\"templates\":[{\"templateid\":\"${LINUX_TID}\"},{\"templateid\":\"${DOCKER_TID}\"},{\"templateid\":\"${PG_TID}\"}],"
 BODY+="\"macros\":["
 BODY+="{\"macro\":\"{\$PG.CONNSTRING}\",\"value\":\"tcp://postgres:5432\"},"
