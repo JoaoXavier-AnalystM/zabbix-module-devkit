@@ -8,7 +8,8 @@
   "description": "Development module for Zabbix Module DevKit.",
   "actions": {
     "devkitdemo.view": {
-      "class": "DevKitDemo"
+      "class": "DevKitDemo",
+      "view": "devkitdemo.view"
     }
   }
 }

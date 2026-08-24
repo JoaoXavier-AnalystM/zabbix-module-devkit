@@ -4,14 +4,12 @@ namespace Modules\DevKitDemo\Actions;
 
 use CController;
 use CControllerResponseData;
+use Modules\DevKitDemo\Services\ZabbixServerStatusService;
+
+require_once dirname(__DIR__) . '/include/Services/ZabbixServerStatusService.php';
 
 class DevKitDemo extends CController
 {
-    protected function init(): void
-    {
-        $this->disableCsrfValidation();
-    }
-
     protected function checkInput(): bool
     {
         return true;
@@ -19,13 +17,16 @@ class DevKitDemo extends CController
 
     protected function checkPermissions(): bool
     {
-        return true;
+        return $this->getUserType() >= USER_TYPE_ZABBIX_USER;
     }
 
     protected function doAction(): void
     {
+        $status = (new ZabbixServerStatusService())->getStatus();
+
         $this->setResponse(new CControllerResponseData([
-            'title' => 'Zabbix Module DevKit'
+            'title' => _('Zabbix server status'),
+            'status' => $status
         ]));
     }
 }
