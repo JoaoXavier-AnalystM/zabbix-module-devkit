@@ -1,0 +1,113 @@
+name: Deploy Development
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zabbix-dev-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to development VM
+    runs-on: ubuntu-latest
+
+    environment:
+      name: development
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          ssh-keyscan \
+            -p "$DEPLOY_PORT" \
+            -H "$DEPLOY_HOST" \
+            >> ~/.ssh/known_hosts
+
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Test SSH connection
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          set -euo pipefail
+
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -p "$DEPLOY_PORT" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            'echo "SSH connection successful"; whoami; hostname'
+
+      - name: Deploy application
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          set -euo pipefail
+
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -p "$DEPLOY_PORT" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" << 'EOF'
+
+            set -euo pipefail
+
+            PROJECT_DIR="/opt/zabbix-module-devkit"
+
+            echo "Deploy host:"
+            hostname
+
+            echo "Deploy user:"
+            whoami
+
+            if [[ ! -d "$PROJECT_DIR/.git" ]]; then
+              echo "ERROR: Repository not found at $PROJECT_DIR"
+              exit 1
+            fi
+
+            cd "$PROJECT_DIR"
+
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
+
+            cd docker
+
+            docker compose config >/dev/null
+            docker compose pull
+            docker compose up -d
+
+            docker compose ps
+
+          EOF
