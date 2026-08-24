@@ -88,6 +88,29 @@ jobs:
             python3 -m json.tool "$file" >/dev/null
           done
 
+      - name: Validate UTF-8 files without BOM
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          extensions = {'.php', '.json'}
+          files = [path for path in Path('modules').rglob('*') if path.is_file() and path.suffix in extensions]
+          bom_files = []
+
+          for path in files:
+              if path.read_bytes().startswith(b'\xef\xbb\xbf'):
+                  bom_files.append(path)
+
+          if bom_files:
+              for path in bom_files:
+                  print(f'::error::UTF-8 BOM found: {path}')
+              raise SystemExit(1)
+
+          print(f'UTF-8 BOM check passed for {len(files)} files.')
+
       - name: Check forbidden frontend frameworks
         shell: bash
         run: |
