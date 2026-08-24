@@ -29,7 +29,13 @@ MONITOR_PASSWORD="${ZBX_MONITOR_PASSWORD:-zbx_monitor_dev_password}"
 MONITOR_DATABASE="${ZBX_MONITOR_DATABASE:-zabbix}"
 
 api_call() {
-    curl -sS -H 'Content-Type: application/json-rpc' -d "$1" "$API_URL"
+    local headers=(-H 'Content-Type: application/json-rpc')
+
+    if [ -n "${AUTH:-}" ]; then
+        headers+=(-H "Authorization: Bearer ${AUTH}")
+    fi
+
+    curl -sS "${headers[@]}" -d "$1" "$API_URL"
 }
 
 echo "Waiting for Zabbix API at $API_URL ..."
@@ -53,11 +59,11 @@ echo "Authenticated."
 
 # Host group -------------------------------------------------------------
 
-GROUP=$(api_call "{\"jsonrpc\":\"2.0\",\"method\":\"hostgroup.get\",\"params\":{\"output\":[\"groupid\"],\"filter\":{\"name\":[\"DevKit\"]}},\"auth\":\"${AUTH}\",\"id\":2}")
+GROUP=$(api_call "{\"jsonrpc\":\"2.0\",\"method\":\"hostgroup.get\",\"params\":{\"output\":[\"groupid\"],\"filter\":{\"name\":[\"DevKit\"]}},\"id\":2}")
 GROUPID=$(printf '%s' "$GROUP" | sed -nE 's/.*"groupid":"([0-9]+)".*/\1/p')
 
 if [ -z "$GROUPID" ]; then
-    CREATED=$(api_call "{\"jsonrpc\":\"2.0\",\"method\":\"hostgroup.create\",\"params\":{\"name\":\"DevKit\"},\"auth\":\"${AUTH}\",\"id\":3}")
+    CREATED=$(api_call "{\"jsonrpc\":\"2.0\",\"method\":\"hostgroup.create\",\"params\":{\"name\":\"DevKit\"},\"id\":3}")
     GROUPID=$(printf '%s' "$CREATED" | sed -nE 's/.*"groupids":\["([0-9]+)"\].*/\1/p')
     if [ -z "$GROUPID" ]; then
         echo "ERROR: could not create host group DevKit." >&2
@@ -71,7 +77,7 @@ fi
 
 template_id() {
     local name=$1
-    api_call "{\"jsonrpc\":\"2.0\",\"method\":\"template.get\",\"params\":{\"output\":[\"templateid\"],\"filter\":{\"name\":[\"${name}\"]}},\"auth\":\"${AUTH}\",\"id\":4}" \
+    api_call "{\"jsonrpc\":\"2.0\",\"method\":\"template.get\",\"params\":{\"output\":[\"templateid\"],\"filter\":{\"name\":[\"${name}\"]}},\"id\":4}" \
         | sed -nE 's/.*"templateid":"([0-9]+)".*/\1/p'
 }
 
@@ -89,11 +95,11 @@ fi
 
 # Host ---------------------------------------------------------------------
 
-EXISTS=$(api_call "{\"jsonrpc\":\"2.0\",\"method\":\"host.get\",\"params\":{\"output\":[\"hostid\"],\"selectInterfaces\":[\"interfaceid\"],\"filter\":{\"host\":[\"${HOST}\"]}},\"auth\":\"${AUTH}\",\"id\":5}")
+EXISTS=$(api_call "{\"jsonrpc\":\"2.0\",\"method\":\"host.get\",\"params\":{\"output\":[\"hostid\"],\"selectInterfaces\":[\"interfaceid\"],\"filter\":{\"host\":[\"${HOST}\"]}},\"id\":5}")
 if printf '%s' "$EXISTS" | grep -q '"hostid"'; then
     HOSTID=$(printf '%s' "$EXISTS" | sed -nE 's/.*"hostid":"([0-9]+)".*/\1/p')
     INTERFACEID=$(printf '%s' "$EXISTS" | sed -nE 's/.*"interfaceid":"([0-9]+)".*/\1/p')
-    UPDATE=$(api_call "{\"jsonrpc\":\"2.0\",\"method\":\"hostinterface.update\",\"params\":{\"interfaceid\":\"${INTERFACEID}\",\"port\":\"${AGENT_PORT}\"},\"auth\":\"${AUTH}\",\"id\":7}")
+    UPDATE=$(api_call "{\"jsonrpc\":\"2.0\",\"method\":\"hostinterface.update\",\"params\":{\"interfaceid\":\"${INTERFACEID}\",\"port\":\"${AGENT_PORT}\"},\"id\":7}")
     if ! printf '%s' "$UPDATE" | grep -q '"interfaceid"'; then
         echo "ERROR: could not update agent port for host $HOST (hostid $HOSTID)." >&2
         echo "Response: $UPDATE" >&2
@@ -114,7 +120,7 @@ BODY+="{\"macro\":\"{\$PG.USER}\",\"value\":\"${MONITOR_USER}\"},"
 BODY+="{\"macro\":\"{\$PG.PASSWORD}\",\"value\":\"${MONITOR_PASSWORD}\"},"
 BODY+="{\"macro\":\"{\$PG.DATABASE}\",\"value\":\"${MONITOR_DATABASE}\"}"
 BODY+="]},"
-BODY+="\"auth\":\"${AUTH}\",\"id\":6}"
+BODY+="\"id\":6}"
 
 RESULT=$(api_call "$BODY")
 
