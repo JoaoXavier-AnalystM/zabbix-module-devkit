@@ -3,6 +3,14 @@
 $status = $data['status'];
 $host = $status['host'];
 $availabilityClass = 'status-' . $status['availability'];
+$severityNames = [
+    _('Not classified'),
+    _('Information'),
+    _('Warning'),
+    _('Average'),
+    _('High'),
+    _('Disaster')
+];
 
 $content = new CDiv();
 
@@ -24,7 +32,22 @@ else {
             ->addRow([_('Technical name'), $host['technical_name']])
             ->addRow([_('Host status'), $host['status'] === '0' ? _('Monitored') : _('Not monitored')])
             ->addRow([_('Interface availability'), (new CSpan($status['availability_text']))->addClass($availabilityClass)])
+            ->addRow([_('Active problems'), array_sum($status['problem_counts'])])
     );
+
+    $problemTable = (new CTableInfo())->setHeader([_('Severity'), _('Count')]);
+    foreach ($status['problem_counts'] as $severity => $count) {
+        if ($count > 0) {
+            $problemTable->addRow([$severityNames[$severity], $count]);
+        }
+    }
+
+    if (!$status['problems']) {
+        $problemTable->addRow([_('No active problems.'), 0]);
+    }
+
+    $content->addItem((new CTag('h4', true, _('Active problems'))));
+    $content->addItem($problemTable);
 
     $itemsTable = (new CTableInfo())->setHeader([_('Process metric'), _('Last value'), _('Last update')]);
 

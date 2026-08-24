@@ -15,6 +15,8 @@ class ZabbixServerStatusService
             'availability' => 'unknown',
             'availability_text' => _('Unknown'),
             'process_items' => [],
+            'problems' => [],
+            'problem_counts' => array_fill(0, 6, 0),
             'error' => null
         ];
 
@@ -41,12 +43,38 @@ class ZabbixServerStatusService
             $status['availability'] = $this->getAvailability($host['interfaces'] ?? []);
             $status['availability_text'] = $this->getAvailabilityText($status['availability']);
             $status['process_items'] = $this->getProcessItems($host['hostid']);
+            $status['problems'] = $this->getProblems($host['hostid']);
+            foreach ($status['problems'] as $problem) {
+                $status['problem_counts'][$problem['severity']]++;
+            }
         }
         catch (\Throwable $exception) {
             $status['error'] = _('Unable to load Zabbix server status.');
         }
 
         return $status;
+    }
+
+    private function getProblems(string $hostId): array
+    {
+        $problems = API::Problem()->get([
+            'output' => ['eventid', 'name', 'clock', 'severity'],
+            'hostids' => [$hostId],
+            'source' => 0,
+            'object' => 0,
+            'sortfield' => 'clock',
+            'sortorder' => 'DESC',
+            'limit' => 50
+        ]);
+
+        return array_map(static function (array $problem): array {
+            return [
+                'eventid' => $problem['eventid'],
+                'name' => $problem['name'],
+                'clock' => (int) $problem['clock'],
+                'severity' => (int) $problem['severity']
+            ];
+        }, $problems);
     }
 
     private function getProcessItems(string $hostId): array

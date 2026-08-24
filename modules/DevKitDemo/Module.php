@@ -12,7 +12,7 @@ class Module extends CModule
     {
         APP::Component()->get('menu.main')
             ->add(
-                (new CMenuItem(_('DevKit Demo')))
+                (new CMenuItem(_('Zabbix Status')))
                     ->setAction('devkitdemo.view')
             );
     }

@@ -1,10 +1,10 @@
-# DevKit Demo
+# Zabbix Status
 
-The initial screen displays the status of the built-in `Zabbix server` host.
+The screen displays the operational status of the built-in `Zabbix server` host.
 
 It is a read-only native Zabbix frontend module. The action requires an
 authenticated Zabbix user and the service reads the host interface status and
-items whose keys start with `zabbix[`.
+items whose keys start with `zabbix[`, and up to 50 active problems.
 
 When the host or process items are unavailable, the screen renders an explicit
 empty or unknown state instead of exposing API errors or sensitive data.

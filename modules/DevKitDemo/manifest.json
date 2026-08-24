@@ -1,11 +1,11 @@
 {
   "manifest_version": 2.0,
   "id": "devkitdemo",
-  "name": "DevKit Demo",
+  "name": "Zabbix Status",
   "namespace": "DevKitDemo",
   "version": "1.0.0",
   "author": "Joao Xavier",
-  "description": "Development module for Zabbix Module DevKit.",
+  "description": "Operational status view for the Zabbix server host.",
   "actions": {
     "devkitdemo.view": {
       "class": "DevKitDemo",
