@@ -1,0 +1,16 @@
+# Normalize line endings. Without this, `core.autocrlf=true` on Windows checks
+# shell scripts out with CRLF; the postgres initdb entrypoint then fails with
+# `$'\r': command not found` and the whole stack dies on first boot.
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.php  text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary

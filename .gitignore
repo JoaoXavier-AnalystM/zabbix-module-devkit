@@ -1,0 +1,9 @@
+# Local compose overrides and secrets
+.env
+docker/.env
+docker/compose.override.yml
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.swp
