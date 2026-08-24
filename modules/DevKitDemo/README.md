@@ -3,7 +3,7 @@
 The screen displays the operational status of the built-in `Zabbix server` host.
 
 It is a read-only native Zabbix frontend module. The action requires an
-authenticated Zabbix user; the service reads the host interface status and
+Zabbix frontend user; the service reads the host interface status and
 items whose keys start with `zabbix[`, and up to 50 active problems.
 
 When the host or process items are unavailable, the screen renders an explicit
