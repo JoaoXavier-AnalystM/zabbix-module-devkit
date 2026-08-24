@@ -141,11 +141,11 @@ jobs:
           fi
           echo "PostgreSQL container preserved: $POSTGRES_CID"
 
-          echo "== Pulling application images =="
+          echo "== Pulling application images from registry =="
           compose pull --quiet zabbix-server zabbix-agent2 zabbix-web
 
-          echo "== Recreating application containers only =="
-          compose up -d --no-deps --force-recreate \
+          echo "== Pulling and recreating application containers only =="
+          compose up -d --pull always --no-deps --force-recreate \
             zabbix-server zabbix-agent2 zabbix-web
 
           POSTGRES_CID_AFTER="$(compose ps -q postgres)"
