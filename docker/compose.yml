@@ -201,7 +201,6 @@ services:
       ZBX_HOSTNAME: ${ZBX_HOSTNAME:-DevKit-Stack}
       ZBX_LISTENPORT: ${ZBX_AGENT_PORT:-10150}
       ZBX_PASSIVE_ALLOW: "true"
-      ZBX_PASSIVESERVERS: zabbix-server
 
     # The server reaches the agent over the compose network by service name.
     # Keep the published port loopback-only for manual zabbix_get debugging.
