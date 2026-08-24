@@ -17,7 +17,8 @@ class DevKitDemo extends CController
 
     protected function checkPermissions(): bool
     {
-        return $this->checkAccess('ui.monitoring.hosts');
+        return $this->getUserType() >= USER_TYPE_ZABBIX_ADMIN
+            || $this->checkAccess('ui.monitoring.hosts');
     }
 
     protected function doAction(): void
