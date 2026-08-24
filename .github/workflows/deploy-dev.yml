@@ -126,25 +126,36 @@ jobs:
           echo "== Validating compose =="
           compose config >/dev/null
 
-          # One-off migration. The stack used to run under the implicit project
-          # name "docker" with fixed container_name values and a pinned network
-          # name. Those are global identifiers: they survive the project rename
-          # and make `up` fail with "container name is already in use".
-          echo "== Removing legacy stack, if present =="
-          docker compose -p docker -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
-          for legacy in zabbix-dev-postgres zabbix-dev-server zabbix-dev-web zabbix-dev-agent2; do
+          # Remove only legacy application containers. Never stop the entire
+          # project here: PostgreSQL and its volume must remain untouched.
+          echo "== Removing legacy application containers, if present =="
+          for legacy in zabbix-dev-server zabbix-dev-web zabbix-dev-agent2; do
             docker rm -f "$legacy" >/dev/null 2>&1 || true
           done
-          docker network rm zabbix-module-devkit >/dev/null 2>&1 || true
 
-          echo "== Stopping current stack =="
-          compose down --remove-orphans
+          POSTGRES_CID="$(compose ps -q postgres)"
+          if [[ -z "$POSTGRES_CID" ]]; then
+            echo "ERROR: PostgreSQL container is not running; refusing deploy."
+            compose ps
+            exit 1
+          fi
+          echo "PostgreSQL container preserved: $POSTGRES_CID"
 
-          echo "== Pulling images =="
-          compose pull --quiet
+          echo "== Pulling application images =="
+          compose pull --quiet zabbix-server zabbix-agent2 zabbix-web
 
-          echo "== Starting stack =="
-          compose up -d --remove-orphans
+          echo "== Recreating application containers only =="
+          compose up -d --no-deps --force-recreate \
+            zabbix-server zabbix-agent2 zabbix-web
+
+          POSTGRES_CID_AFTER="$(compose ps -q postgres)"
+          if [[ "$POSTGRES_CID" != "$POSTGRES_CID_AFTER" ]]; then
+            echo "ERROR: PostgreSQL container changed during deploy."
+            echo "Before: $POSTGRES_CID"
+            echo "After:  $POSTGRES_CID_AFTER"
+            exit 1
+          fi
+          echo "PostgreSQL container unchanged."
 
           # The Zabbix server has no healthcheck (it imports the schema on a
           # fresh volume), so gate the deploy on the frontend instead: it only

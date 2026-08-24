@@ -60,6 +60,9 @@ The development stack monitors itself:
   container, host and PostgreSQL metrics to the local Zabbix server.
 - The agent listens on port `10150` by default. `ZBX_AGENT_PORT` controls both
   the agent listen port and the host interface port registered by the bootstrap.
+- Passive checks are enabled only for the Compose service `zabbix-server`.
+- Deploys recreate only `zabbix-server`, `zabbix-agent2` and `zabbix-web`;
+  PostgreSQL and its volume are preserved and verified by container ID.
 - `scripts/bootstrap-monitoring.sh` registers the `DevKit-Stack` host via
   the Zabbix API with the Linux, Docker and PostgreSQL agent 2 templates.
 - The PostgreSQL monitoring user (`zbx_monitor`, role `pg_monitor`) is
