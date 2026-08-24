@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 (new CWidget())
     ->setTitle($data['title'])
