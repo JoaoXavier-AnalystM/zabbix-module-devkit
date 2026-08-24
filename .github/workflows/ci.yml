@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repository-validation:
+    name: Repository validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show repository structure
+        run: |
+          find . -maxdepth 4 -type f | sort
+
+      - name: Validate required files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_files=(
+            "README.md"
+            "AGENTS.md"
+            "docs/architecture.md"
+          )
+
+          for file in "${required_files[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              echo "::error::Required file not found: $file"
+              exit 1
+            fi
+
+            echo "OK: $file"
+          done
+
+      - name: Validate PHP syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t php_files < <(find modules -type f -name "*.php" 2>/dev/null || true)
+
+          if [[ ${#php_files[@]} -eq 0 ]]; then
+            echo "No PHP files found yet. Skipping PHP lint."
+            exit 0
+          fi
+
+          failed=0
+
+          for file in "${php_files[@]}"; do
+            echo "Checking: $file"
+
+            if ! php -l "$file"; then
+              failed=1
+            fi
+          done
+
+          exit "$failed"
+
+      - name: Validate JSON files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t json_files < <(find modules -type f -name "*.json" 2>/dev/null || true)
+
+          if [[ ${#json_files[@]} -eq 0 ]]; then
+            echo "No JSON files found yet. Skipping JSON validation."
+            exit 0
+          fi
+
+          for file in "${json_files[@]}"; do
+            echo "Checking: $file"
+            python3 -m json.tool "$file" >/dev/null
+          done
+
+      - name: Check forbidden frontend frameworks
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if grep -RniE \
+            --exclude-dir=.git \
+            --exclude="*.md" \
+            'bootstrap|tailwind|material-ui|material ui' \
+            modules/ 2>/dev/null; then
+
+            echo "::error::Forbidden external UI framework reference found."
+            exit 1
+          fi
+
+          echo "No forbidden frontend frameworks detected."
