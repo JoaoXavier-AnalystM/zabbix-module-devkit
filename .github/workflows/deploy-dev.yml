@@ -1,15 +1,24 @@
 name: Deploy Development
 
+# `dev` is the deploying branch: every push to it rolls the development VM.
+# `main` stays stable and is not deployed automatically - merge into it via PR.
+# Use workflow_dispatch to deploy any other branch on demand.
 on:
   push:
     branches:
-      - main
+      - dev
 
   workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to deploy to the development VM
+        required: false
+        default: dev
 
 permissions:
   contents: read
 
+# One deploy at a time: every branch targets the same VM.
 concurrency:
   group: zabbix-dev-deploy
   cancel-in-progress: false
@@ -18,13 +27,32 @@ jobs:
   deploy:
     name: Deploy to development VM
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     environment:
       name: development
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Resolve target branch
+        id: target
+        shell: bash
+        env:
+          INPUT_BRANCH: ${{ inputs.branch }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          BRANCH="${INPUT_BRANCH:-$REF_NAME}"
+
+          # The branch name is interpolated into the remote command below, so
+          # reject anything that is not a plain git ref before it gets there.
+          if [[ ! "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            echo "ERROR: refusing unsafe branch name: $BRANCH"
+            exit 1
+          fi
+
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "Deploying branch: $BRANCH"
 
       - name: Configure SSH
         shell: bash
@@ -48,12 +76,13 @@ jobs:
 
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Test SSH connection
+      - name: Deploy application
         shell: bash
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          TARGET_BRANCH: ${{ steps.target.outputs.branch }}
         run: |
           set -euo pipefail
 
@@ -63,80 +92,96 @@ jobs:
             -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
             "$DEPLOY_USER@$DEPLOY_HOST" \
-            'echo "SSH connection successful"; whoami; hostname'
-
-      - name: Deploy application
-        shell: bash
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-        run: |
+            "TARGET_BRANCH='$TARGET_BRANCH' bash -s" << 'EOF'
           set -euo pipefail
 
-          ssh \
-            -i ~/.ssh/deploy_key \
-            -p "$DEPLOY_PORT" \
-            -o BatchMode=yes \
-            -o StrictHostKeyChecking=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" << 'EOF'
+          PROJECT_DIR="/opt/zabbix-module-devkit"
+          COMPOSE_FILE="$PROJECT_DIR/docker/compose.yml"
+          BRANCH="${TARGET_BRANCH:?TARGET_BRANCH not set}"
 
-            set -euo pipefail
+          echo "Host: $(hostname)"
+          echo "User: $(whoami)"
+          echo "Branch: $BRANCH"
 
-            PROJECT_DIR="/opt/zabbix-module-devkit"
-
-            echo "Deploy host:"
-            hostname
-
-            echo "Deploy user:"
-            whoami
-
-            if [[ ! -d "$PROJECT_DIR/.git" ]]; then
-              echo "ERROR: Repository not found at $PROJECT_DIR"
-              exit 1
-            fi
-
-            cd "$PROJECT_DIR"
-
-            git fetch origin main
-            git checkout main
-            git reset --hard origin/main
-
-            PROJECT_DIR="/opt/zabbix-module-devkit"
-            COMPOSE_FILE="$PROJECT_DIR/docker/compose.yml"
-
-            echo "Project directory: $PROJECT_DIR"
-            echo "Compose file: $COMPOSE_FILE"
-
-            if [[ ! -d "$PROJECT_DIR/.git" ]]; then
-            echo "ERROR: Git repository not found: $PROJECT_DIR"
+          if [[ ! -d "$PROJECT_DIR/.git" ]]; then
+            echo "ERROR: git repository not found at $PROJECT_DIR"
             exit 1
-            fi
+          fi
 
-            if [[ ! -f "$COMPOSE_FILE" ]]; then
-            echo "ERROR: Docker Compose file not found: $COMPOSE_FILE"
+          cd "$PROJECT_DIR"
+
+          git fetch --prune origin "$BRANCH"
+          git checkout -B "$BRANCH" "origin/$BRANCH"
+          git reset --hard "origin/$BRANCH"
+
+          if [[ ! -f "$COMPOSE_FILE" ]]; then
+            echo "ERROR: compose file not found at $COMPOSE_FILE"
             exit 1
+          fi
+
+          echo "Revision: $(git log -1 --oneline)"
+
+          compose() { docker compose -f "$COMPOSE_FILE" "$@"; }
+
+          echo "== Validating compose =="
+          compose config >/dev/null
+
+          # One-off migration. The stack used to run under the implicit project
+          # name "docker" with fixed container_name values and a pinned network
+          # name. Those are global identifiers: they survive the project rename
+          # and make `up` fail with "container name is already in use".
+          echo "== Removing legacy stack, if present =="
+          docker compose -p docker -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
+          for legacy in zabbix-dev-postgres zabbix-dev-server zabbix-dev-web zabbix-dev-agent2; do
+            docker rm -f "$legacy" >/dev/null 2>&1 || true
+          done
+          docker network rm zabbix-module-devkit >/dev/null 2>&1 || true
+
+          echo "== Stopping current stack =="
+          compose down --remove-orphans
+
+          echo "== Pulling images =="
+          compose pull --quiet
+
+          echo "== Starting stack =="
+          compose up -d --remove-orphans
+
+          # The Zabbix server has no healthcheck (it imports the schema on a
+          # fresh volume), so gate the deploy on the frontend instead: it only
+          # answers /ping once PHP can reach both the database and the server.
+          echo "== Waiting for the frontend to become healthy =="
+          WEB_CID="$(compose ps -q zabbix-web)"
+          if [[ -z "$WEB_CID" ]]; then
+            echo "ERROR: zabbix-web container was not created"
+            compose ps
+            exit 1
+          fi
+
+          DEADLINE=$(( SECONDS + 420 ))
+          STATE="unknown"
+          while (( SECONDS < DEADLINE )); do
+            STATE="$(docker inspect -f '{{.State.Health.Status}}' "$WEB_CID" 2>/dev/null || echo unknown)"
+            [[ "$STATE" == "healthy" ]] && break
+            if [[ "$(docker inspect -f '{{.State.Status}}' "$WEB_CID" 2>/dev/null)" == "exited" ]]; then
+              echo "ERROR: zabbix-web exited"
+              break
             fi
+            sleep 5
+          done
 
-            cd "$PROJECT_DIR"
+          echo "== Container status =="
+          compose ps
 
-            git fetch origin main
-            git checkout main
-            git reset --hard origin/main
+          if [[ "$STATE" != "healthy" ]]; then
+            echo "ERROR: zabbix-web did not become healthy (last state: $STATE)"
+            echo "--- zabbix-web logs ---"
+            compose logs --tail 50 zabbix-web || true
+            echo "--- zabbix-server logs ---"
+            compose logs --tail 50 zabbix-server || true
+            echo "--- postgres logs ---"
+            compose logs --tail 30 postgres || true
+            exit 1
+          fi
 
-            echo "Current revision:"
-            git log -1 --oneline
-
-            echo "Validating Docker Compose..."
-            docker compose -f "$COMPOSE_FILE" config >/dev/null
-
-            echo "Pulling containers..."
-            docker compose -f "$COMPOSE_FILE" pull
-
-            echo "Starting Zabbix development environment..."
-            docker compose -f "$COMPOSE_FILE" up -d
-
-            echo "Container status:"
-            docker compose -f "$COMPOSE_FILE" ps
-
+          echo "Deploy OK: frontend healthy."
           EOF

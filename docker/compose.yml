@@ -14,6 +14,15 @@
 #   docker compose logs -f zabbix-server
 #
 # Requires Docker Engine 25+ (healthcheck `start_interval`).
+#
+# No service declares `container_name` and the network is not given a fixed
+# `name`. Both would be global identifiers outside the project namespace, so
+# renaming the project (or running a second copy of this stack) collides with
+# "container name is already in use". Compose derives unique names from the
+# project instead: zabbix-module-devkit-postgres-1, and so on.
+#
+# Override the project name to run more than one copy on the same host:
+#   COMPOSE_PROJECT_NAME=devkit-pr42 ZBX_WEB_PORT=8081 docker compose up -d
 
 name: zabbix-module-devkit
 
@@ -26,7 +35,6 @@ x-logging: &default-logging
 services:
   postgres:
     image: postgres:17-alpine
-    container_name: zabbix-dev-postgres
     restart: unless-stopped
     init: true
     logging: *default-logging
@@ -72,7 +80,6 @@ services:
 
   zabbix-server:
     image: zabbix/zabbix-server-pgsql:alpine-7.4-latest
-    container_name: zabbix-dev-server
     restart: unless-stopped
     init: true
     logging: *default-logging
@@ -116,7 +123,6 @@ services:
 
   zabbix-web:
     image: zabbix/zabbix-web-nginx-pgsql:alpine-7.4-latest
-    container_name: zabbix-dev-web
     restart: unless-stopped
     init: true
     logging: *default-logging
@@ -169,7 +175,6 @@ services:
 
   zabbix-agent2:
     image: zabbix/zabbix-agent2:ubuntu-7.4-latest
-    container_name: zabbix-dev-agent2
     restart: unless-stopped
     init: true
     logging: *default-logging
@@ -217,4 +222,3 @@ volumes:
 
 networks:
   zabbix-dev:
-    name: zabbix-module-devkit
