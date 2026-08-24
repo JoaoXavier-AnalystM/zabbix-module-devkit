@@ -3,6 +3,7 @@
 $status = $data['status'];
 $host = $status['host'];
 $availabilityClass = 'status-' . $status['availability'];
+$resources = $status['resources'];
 $severityNames = [
     _('Not classified'),
     _('Information'),
@@ -25,6 +26,18 @@ if ($host === null) {
     $content->addItem((new CDiv())->addItem(_('No Zabbix server data is available.')));
 }
 else {
+    $summaryTable = (new CTableInfo())->setHeader([_('Status'), _('Value')]);
+    $summaryTable
+        ->addRow([_('Interface'), (new CSpan($status['availability_text']))->addClass($availabilityClass)])
+        ->addRow([_('CPU usage'), $resources['cpu_usage'] ?? _('No data')])
+        ->addRow([_('CPU total'), $resources['cpu_total'] ?? _('No data')])
+        ->addRow([_('Memory usage'), $resources['memory_usage'] ?? _('No data')])
+        ->addRow([_('Memory total'), $resources['memory_total'] ?? _('No data')])
+        ->addRow([_('Active problems'), array_sum($status['problem_counts'])]);
+
+    $content->addItem((new CTag('h3', true, _('Zabbix server overview'))));
+    $content->addItem($summaryTable);
+
     $content->addItem(
         (new CTableInfo())
             ->setHeader([_('Property'), _('Value')])

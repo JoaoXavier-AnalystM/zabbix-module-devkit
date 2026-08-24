@@ -17,6 +17,12 @@ class ZabbixServerStatusService
             'process_items' => [],
             'problems' => [],
             'problem_counts' => array_fill(0, 6, 0),
+            'resources' => [
+                'cpu_usage' => null,
+                'cpu_total' => null,
+                'memory_usage' => null,
+                'memory_total' => null
+            ],
             'error' => null
         ];
 
@@ -43,6 +49,7 @@ class ZabbixServerStatusService
             $status['availability'] = $this->getAvailability($host['interfaces'] ?? []);
             $status['availability_text'] = $this->getAvailabilityText($status['availability']);
             $status['process_items'] = $this->getProcessItems($host['hostid']);
+            $status['resources'] = $this->getResources($host['hostid']);
             $status['problems'] = $this->getProblems($host['hostid']);
             foreach ($status['problems'] as $problem) {
                 $status['problem_counts'][$problem['severity']]++;
@@ -97,6 +104,42 @@ class ZabbixServerStatusService
                 'state' => $item['state']
             ];
         }, $items);
+    }
+
+    private function getResources(string $hostId): array
+    {
+        $items = API::Item()->get([
+            'hostids' => [$hostId],
+            'output' => ['name', 'key_', 'lastvalue', 'units'],
+            'filter' => ['status' => ITEM_STATUS_ACTIVE]
+        ]);
+        $resources = [
+            'cpu_usage' => null,
+            'cpu_total' => null,
+            'memory_usage' => null,
+            'memory_total' => null
+        ];
+
+        foreach ($items as $item) {
+            $key = strtolower($item['key_']);
+            $name = strtolower($item['name']);
+            $value = $item['lastvalue'];
+
+            if ($resources['cpu_usage'] === null && (str_contains($key, 'system.cpu.util') || str_contains($name, 'cpu usage') || str_contains($name, 'cpu utilization'))) {
+                $resources['cpu_usage'] = $value . $item['units'];
+            }
+            elseif ($resources['cpu_total'] === null && (str_contains($key, 'system.cpu.num') || str_contains($key, 'system.hw.cpu.num') || str_contains($name, 'number of cpu') || str_contains($name, 'cpu cores'))) {
+                $resources['cpu_total'] = $value . $item['units'];
+            }
+            elseif ($resources['memory_usage'] === null && (str_contains($key, 'vm.memory.util') || str_contains($key, 'vm.memory.pused') || str_contains($name, 'memory usage') || str_contains($name, 'memory utilization'))) {
+                $resources['memory_usage'] = $value . $item['units'];
+            }
+            elseif ($resources['memory_total'] === null && (str_contains($key, 'vm.memory.size[total]') || str_contains($key, 'vm.memory.total') || str_contains($name, 'total memory') || str_contains($name, 'memory total'))) {
+                $resources['memory_total'] = $value . $item['units'];
+            }
+        }
+
+        return $resources;
     }
 
     private function getAvailability(array $interfaces): string
