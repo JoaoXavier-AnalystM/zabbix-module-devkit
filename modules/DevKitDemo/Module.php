@@ -2,8 +2,18 @@
 
 namespace Modules\DevKitDemo;
 
-use Zabbix\Core\CModule;
+use Zabbix\Core\CModule,
+    APP,
+    CMenuItem;
 
 class Module extends CModule
 {
+    public function init(): void
+    {
+        APP::Component()->get('menu.main')
+            ->add(
+                (new CMenuItem(_('DevKit Demo')))
+                    ->setAction('devkitdemo.view')
+            );
+    }
 }
