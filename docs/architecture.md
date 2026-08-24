@@ -52,6 +52,17 @@ View
  ↓
 Native Zabbix UI
 
+## Monitoring
+
+The development stack monitors itself:
+
+- `zabbix-agent2` container with read-only Docker socket access reports
+  container, host and PostgreSQL metrics to the local Zabbix server.
+- `scripts/bootstrap-monitoring.sh` registers the `DevKit-Stack` host via
+  the Zabbix API with the Linux, Docker and PostgreSQL agent 2 templates.
+- The PostgreSQL monitoring user (`zbx_monitor`, role `pg_monitor`) is
+  created by `docker/postgres/initdb/01-zbx-monitor.sh` on first start.
+
 ## Main rule
 
 The module must behave as if it were part of the native Zabbix frontend.
