@@ -119,7 +119,7 @@ fi
 BODY="{\"jsonrpc\":\"2.0\",\"method\":\"host.create\",\"params\":{"
 BODY+="\"host\":\"${HOST}\",\"name\":\"${HOST}\","
 BODY+="\"groups\":[{\"groupid\":\"${GROUPID}\"}],"
-BODY+="\"interfaces\":[{\"type\":1,\"main\":1,\"useip\":0,\"dns\":\"${AGENT_DNS}\",\"port\":\"${AGENT_PORT}\"}]"
+BODY+="\"interfaces\":[{\"type\":1,\"main\":1,\"useip\":0,\"ip\":\"\",\"dns\":\"${AGENT_DNS}\",\"port\":\"${AGENT_PORT}\"}]"
 BODY+="},"
 BODY+="\"id\":6}"
 
