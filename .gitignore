@@ -1,5 +1,6 @@
 # Local compose overrides and secrets
 .env
+modulos-ex
 docker/.env
 docker/compose.override.yml
 
